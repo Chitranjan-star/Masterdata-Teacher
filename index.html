@@ -39,7 +39,7 @@
   .sheet table tbody td .cell-editor br:only-child{display:none;}
   tbody td{vertical-align:middle!important;}
   .cell-editor:focus{background:#fff9cf;outline:1px solid #777;}
-  .sl{width:30px}.eid{width:57px}.name{width:66px}.designation{width:72px}.gender{width:42px}.class{width:54px}.subject{width:48px}.disable{width:58px}.niyojan{width:55px}.udise{width:48px}.school{width:58px}.dob{width:58px}.joining{width:58px}.training{width:72px}.basic{width:48px}.hra{width:55px}.increment{width:58px}.uan{width:55px}.pan{width:50px}.account{width:58px}.ifsc{width:48px}.adhar{width:42px}.mobile{width:48px}.remarks{width:62px}
+  .sl{width:30px}.eid{width:57px}.name{width:66px}.designation{width:72px}.gender{width:42px}.class{width:54px}.subject{width:48px}.disable{width:58px}.niyojan{width:55px}.udise{width:48px}.school{width:58px}.dob{width:58px}.joining{width:58px}.training{width:72px}.basic{width:48px}.hra{width:55px}.increment{width:58px}.uan{width:55px}.pan{width:50px}.account{width:58px}.ifsc{width:48px}.adhar{width:42px}.mobile{width:48px}.remarks{width:62px;max-width:62px}
   .cert{font-size:13px;line-height:1.65;margin-top:18px}
   .cert p{margin:0 0 2px}
   .signatures{display:flex;justify-content:space-between;gap:30px;margin-top:42px;text-align:center;font-size:13px;font-weight:bold}
@@ -484,10 +484,14 @@ function installColumnResizers(){
   const cols=[...table.querySelector('colgroup').children];
   const original=[30,57,66,72,42,54,48,58,55,48,58,58,58,72,48,55,58,55,50,58,48,42,48,62].slice(0,cols.length);
   function applyWidths(weights){
+    // Only count the columns that actually exist in this form. Otherwise the
+    // unused columns leave spare width that gets dumped into the final Remarks column.
+    weights=weights.slice(0,cols.length);
     const total=weights.reduce((a,b)=>a+b,0);
     weights.forEach((w,i)=>{cols[i].style.width=(w/total*100)+'%';});
     table.style.width='100%';
     table.style.minWidth='0';
+    table.style.tableLayout='fixed';
   }
   // Proportional widths are initialized for every form, including Forms 5, 6, 8 and 9.
   if(!cols.some(c=>c.style.width)){
@@ -1634,16 +1638,37 @@ function ps(k,v){try{localStorage.setItem('pref_'+k,v?'1':'0')}catch(e){}}
 function pg(k,d){try{const v=localStorage.getItem('pref_'+k);return v===null?d:v==='1'}catch(e){return d}}
 
 /* ================= 1) WRAP TEXT (heading / data alag-alag) ================= */
-function clearW(){document.querySelectorAll('.table-wrap col[data-nw]').forEach(c=>{c.style.width='';delete c.dataset.nw;delete c.dataset.baseW;});document.querySelectorAll('.table-wrap table').forEach(t=>{t.style.width='';t.style.minWidth='';});}
+function clearW(){
+  document.querySelectorAll('.table-wrap col[data-nw]').forEach(c=>{
+    c.style.width=c.dataset.baseW||''; delete c.dataset.nw; delete c.dataset.baseW;
+  });
+  document.querySelectorAll('.table-wrap table').forEach(t=>{t.style.width='100%';t.style.minWidth='0';t.style.tableLayout='fixed';});
+}
 function fit(){
-  // FIX: Wrap Text/typing ke dauran heading ya data ki width ke hisaab se columns na badlein.
-  // Existing colgroup/CSS widths ko hi use karein.
-  const h=document.body.classList.contains('hdr-nowrap'),o=document.body.classList.contains('one-line');
-  if(!h&&!o)return;
+  const o=document.body.classList.contains('one-line');
   [...document.querySelectorAll('.table-wrap table')].filter(t=>t.offsetParent!==null&&t.querySelector('colgroup')).forEach(t=>{
-    t.style.tableLayout='fixed';
-    t.style.width='max-content';
-    t.style.minWidth='100%';
+    const cols=[...t.querySelector('colgroup').children];
+    if(o){
+      // No-wrap mode: size each column to its longest actual entry, so names such
+      // as ABHISHEK are not clipped. The table scrolls horizontally instead of
+      // forcing unused width into the final Remarks column.
+      t.style.tableLayout='fixed'; t.style.width='max-content'; t.style.minWidth='100%';
+      cols.forEach((col,i)=>{
+        if(!col.dataset.nw){col.dataset.baseW=col.style.width||getComputedStyle(col).width;col.dataset.nw='1';}
+        const cells=[...t.querySelectorAll('tbody tr')].map(r=>r.cells[i]).filter(Boolean);
+        const longest=cells.reduce((m,td)=>Math.max(m,(td.querySelector('.cell-editor')?.innerText||td.innerText||'').replace(/\s+/g,' ').trim().length),0);
+        const base=[30,57,66,72,42,54,48,58,55,48,58,58,58,72,48,55,58,55,50,58,48,42,48,62][i]||48;
+        const isRemarks=i===cols.length-1 || /remarks/i.test(t.querySelectorAll('thead tr.labels th')[i]?.innerText||'');
+        const max=isRemarks?120:(i===2?240:180);
+        const needed=Math.max(base,Math.min(max,Math.round(longest*7.5+14)));
+        col.style.width=needed+'px';
+      });
+      t.querySelectorAll('tbody .cell-editor').forEach(ed=>{ed.style.whiteSpace='nowrap';ed.style.overflowWrap='normal';ed.style.wordBreak='normal';});
+    } else {
+      clearW();
+      t.style.tableLayout='fixed'; t.style.width='100%'; t.style.minWidth='0';
+      t.querySelectorAll('tbody .cell-editor').forEach(ed=>{ed.style.whiteSpace='pre-wrap';ed.style.overflowWrap='anywhere';ed.style.wordBreak='break-word';});
+    }
   });
 }
 function refit(){const h=document.body.classList.contains('hdr-nowrap'),o=document.body.classList.contains('one-line');if(!h&&!o)clearW();else fit();}
