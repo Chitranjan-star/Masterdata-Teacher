@@ -675,6 +675,17 @@ function downloadExcel(){
 }
 </style>
 
+
+<style id="contentBasedColumnSizingFix">
+/* Keep table columns content-sized; never stretch short fields like Gender. */
+.sheet .table-wrap { overflow-x: auto !important; max-width: 100% !important; }
+.sheet .table-wrap table { width: max-content !important; min-width: 0 !important; table-layout: auto !important; }
+.sheet .table-wrap table th, .sheet .table-wrap table td { box-sizing: border-box !important; }
+.sheet .table-wrap table td { white-space: nowrap; }
+#dataWrapToggle:checked ~ * .sheet .table-wrap table td { white-space: normal; }
+@media print { .sheet .table-wrap table { width: max-content !important; table-layout: auto !important; } }
+</style>
+
 </body></html>`;
   const blob=new Blob(['\ufeff',book],{type:'application/vnd.ms-excel;charset=utf-8;'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Shikshak_Vivरणी_Filled_Data.xls';a.click();URL.revokeObjectURL(a.href);
@@ -1966,5 +1977,16 @@ document.addEventListener('blur',e=>{
   .sheet .table-wrap tbody td .cell-editor { height: auto !important; min-height: 22px !important; max-height: 54px !important; overflow: hidden !important; line-height: 12px !important; padding: 2px 1px !important; }
 }
 </style>
+
+<style id="contentBasedColumnSizingFix">
+/* Keep table columns content-sized; never stretch short fields like Gender. */
+.sheet .table-wrap { overflow-x: auto !important; max-width: 100% !important; }
+.sheet .table-wrap table { width: max-content !important; min-width: 0 !important; table-layout: auto !important; }
+.sheet .table-wrap table th, .sheet .table-wrap table td { box-sizing: border-box !important; }
+.sheet .table-wrap table td { white-space: nowrap; }
+#dataWrapToggle:checked ~ * .sheet .table-wrap table td { white-space: normal; }
+@media print { .sheet .table-wrap table { width: max-content !important; table-layout: auto !important; } }
+</style>
+
 </body>
 </html>
