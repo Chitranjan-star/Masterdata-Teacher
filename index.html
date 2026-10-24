@@ -159,6 +159,13 @@
   <label style="font-weight:bold;font-size:14px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="hindiTypeToggle" onchange="toggleHindiTyping()"> 🔤 GOOGLE हिंदी टाइपिंग (English→हिंदी)</label>
   <button type="button" onclick="openBackupList()" style="background:#e9f7e9;border-color:#2e7d32;font-weight:bold">♻ बैकअप वापस लाएँ</button>
   <span id="autosaveStatus">ऑटो-सेव चालू</span>
+  <button type="button" onclick="document.getElementById('masterUpload').click()" style="background:#fff4cc;border-color:#8a6d00;font-weight:bold" title="सभी शिक्षकों की Excel जिसमें E-Shikshakosh Teacher ID और बाकी details हों">👥 शिक्षक मास्टर EXCEL (ID से AUTO-FILL)</button>
+  <input id="masterUpload" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadTeacherMaster(event)">
+  <label style="font-weight:bold;font-size:14px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="masterAutoFillToggle" checked> ID चुनते ही AUTO-FILL</label>
+  <label style="font-weight:bold;font-size:14px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="dupToggle" checked> 🔴 डुप्लीकेट लाल करें</label>
+  <span id="dupStatus"></span>
+  <span id="masterStatus" style="font-size:12px;color:#444;text-transform:none">👥 मास्टर: 0 शिक्षक</span>
+  <button type="button" onclick="clearTeacherMaster()" style="font-size:12px;padding:4px 8px">मास्टर हटाएँ</button>
   <button type="button" onclick="resetHeadings()">शीर्षक सही जगह लाएँ</button>
   <button onclick="window.print()">प्रिंट / PDF बनाएं</button>
   <button onclick="clearActiveTable()">टेबल खाली करें</button>
@@ -1042,6 +1049,7 @@ if(!DATA.disability.includes('NO'))DATA.disability.push('NO');
 DATA.exTeacher=['EX.TEA-01','EX.TEA-02','EX.TEA-03','EX.TEA-04'];
 DATA.increment=['01/01/2027','01/07/2027'];
 ['niyojan','basics','remarks','ifsc'].forEach(k=>{if(!DATA[k])DATA[k]=[];});
+window.__DD=DATA;
 try{const sv=JSON.parse(localStorage.getItem('dropdownCustom_v1')||'{}');Object.keys(sv).forEach(k=>{DATA[k]=DATA[k]||[];(sv[k]||[]).forEach(v=>{if(!DATA[k].some(x=>String(x).toLowerCase()===String(v).toLowerCase()))DATA[k].push(v);});});}catch(e){}
 let active=null;let currentInput=null;let currentPosition=null;
 function norm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9\u0900-\u097f]/g,'');}
@@ -1733,6 +1741,7 @@ function apply(s){
   if(typeof installRowHeightResizers==='function')installRowHeightResizers();
   setTimeout(refit,80);
 }
+window.__backupNow=function(why){addB(snap(),why);};
 window.openBackupList=function(){
   const l=rdB().slice().reverse(),m=document.createElement('div');m.id='backupModal';
   const box=document.createElement('div');box.className='box';
@@ -1992,6 +2001,121 @@ document.addEventListener('blur',e=>{
 #dataWrapToggle:checked ~ * .sheet .table-wrap table td { white-space: normal; }
 @media print { .sheet .table-wrap table { width: max-content !important; table-layout: auto !important; } }
 </style>
+
+<script id="teacherIdAutoFill">
+(function(){
+const $=id=>document.getElementById(id),KEY='teacherMasterDB_v1';
+let DB={ids:{},t:0};
+try{const r=JSON.parse(localStorage.getItem(KEY)||'null');if(r&&r.ids)DB=r;}catch(e){}
+const fk=h=>{h=String(h==null?'':h);let k=autoFieldKey(h);if(k)return k;const c=h.replace(/\([^)]*\)/g,'').replace(/\[[^\]]*\]/g,'');k=autoFieldKey(c);if(k)return k;const n=autoNorm(c);if(n==='basics')return 'basic';return autoFieldKey(n.replace(/no$/,''))||'';};
+const cnt=()=>Object.keys(DB.ids).length;
+const nid=v=>String(v==null?'':v).trim().toUpperCase().replace(/\s+/g,'').replace(/\.0+$/,'');
+function toast(m,ms){const d=document.createElement('div');d.className='dg-toast';d.textContent=m;document.body.appendChild(d);setTimeout(()=>d.remove(),ms||4500);}
+function status(){const e=$('masterStatus');if(e)e.textContent='👥 मास्टर: '+cnt()+' शिक्षक';}
+function pushIds(ids){const dd=window.__DD;if(!dd)return;dd.teacherIds=dd.teacherIds||[];const have=new Set(dd.teacherIds.map(nid));ids.forEach(i=>{const v=DB.ids[i]&&DB.ids[i].teacherid;if(v&&!have.has(i)){dd.teacherIds.push(v);have.add(i);}});}
+function parseRows(rows){
+  const hi=autoGetHeaderIndex(rows);if(hi<0)return null;
+  const keys=rows[hi].map(h=>fk(h));const idc=keys.indexOf('teacherid');if(idc<0)return null;
+  const ids={};let n=0;
+  rows.slice(hi+1).forEach(r=>{
+    const vals=r.map(v=>String(v==null?'':v).trim()),id=nid(vals[idc]);if(!id)return;
+    const ne=vals.filter(Boolean);if(ne.length>2&&ne.every((v,i)=>v===String(i+1)))return;
+    const rec={};keys.forEach((k,i)=>{if(k&&k!=='sl'&&rec[k]===undefined&&vals[i])rec[k]=vals[i];});
+    ids[id]=rec;n++;
+  });
+  return n?{ids,n}:null;
+}
+async function loadFile(file){
+  if(!file)return;
+  if(typeof XLSX==='undefined'){toast('Excel लाइब्रेरी लोड नहीं हुई — इंटरनेट चालू करके पेज दोबारा खोलें।');return;}
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true,dateNF:'dd/mm/yyyy'});
+    let total=0;const added=[];
+    wb.SheetNames.forEach(nm=>{
+      let p=null;try{p=parseRows(XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,defval:'',raw:false,dateNF:'dd/mm/yyyy'}));}catch(e){}
+      if(p){Object.assign(DB.ids,p.ids);total+=p.n;added.push(...Object.keys(p.ids));}
+    });
+    if(!total){toast('इस फाइल में "E-Shikshakosh Teacher ID" वाली हेडिंग और शिक्षक रिकॉर्ड नहीं मिले।',6000);return;}
+    DB.t=Date.now();pushIds(added);
+    try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){toast('⚠ मास्टर डेटा ब्राउज़र में सेव नहीं हो पाया — पेज बंद होने तक ही चलेगा।',6000);}
+    status();toast('✔ '+total+' शिक्षकों का डेटा तैयार। अब Teacher ID चुनते ही बाकी कॉलम अपने आप भर जाएँगे।',6000);
+  }catch(err){console.error(err);toast('मास्टर Excel पढ़ा नहीं जा सका: '+(err.message||'फाइल जाँचें'),6000);}
+}
+window.loadTeacherMaster=function(ev){const f=ev.target.files&&ev.target.files[0];ev.target.value='';loadFile(f);};
+window.clearTeacherMaster=function(){if(!confirm('सेव किया हुआ शिक्षक मास्टर डेटा हटाना है? (फॉर्म में भरा डेटा नहीं हटेगा)'))return;DB={ids:{},t:0};try{localStorage.removeItem(KEY);}catch(e){}status();};
+// "EXCEL FILE चुनें" वाली फाइल से भी अपने आप मास्टर बने
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='excelUpload'&&e.target.files&&e.target.files[0])loadFile(e.target.files[0]);},true);
+window.addEventListener('load',()=>{status();setTimeout(()=>pushIds(Object.keys(DB.ids)),200);});
+
+const on=()=>!$('masterAutoFillToggle')||$('masterAutoFillToggle').checked;
+function fmt(k,v){if(['dob','joining','increment'].includes(k)){const m=String(v).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);if(m)return m[3].padStart(2,'0')+'/'+m[2].padStart(2,'0')+'/'+m[1];}return String(v);}
+function fillRow(ed){
+  const td=ed.closest('td'),tr=td&&td.parentElement,table=td&&td.closest('table');if(!tr||!table)return;
+  const ths=[...table.querySelectorAll('thead tr.labels th')],idx=[...tr.children].indexOf(td);
+  if(!ths[idx]||fk(ths[idx].textContent)!=='teacherid')return;
+  const id=nid(ed.textContent);if(!id||!cnt())return;
+  const rec=DB.ids[id];if(!rec){toast('इस Teacher ID का डेटा मास्टर में नहीं मिला: '+ed.textContent.trim());return;}
+  const plan=[];let overwrite=false;
+  ths.forEach((th,i)=>{
+    if(i===0||i===idx)return;const k=fk(th.textContent);if(!k||k==='sl'||k==='teacherid')return;
+    const raw=rec[k];if(raw==null||String(raw).trim()==='')return;
+    const e=tr.cells[i]&&tr.cells[i].querySelector('.cell-editor');if(!e)return;
+    const v=fmt(k,raw),cur=e.textContent.trim();if(cur&&cur.toUpperCase()!==v.toUpperCase())overwrite=true;plan.push([e,v]);
+  });
+  if(overwrite&&window.__backupNow)window.__backupNow('Teacher ID से auto-fill (पुराना डेटा बदला) से पहले');
+  plan.forEach(p=>{p[0].textContent=p[1];});
+  if(plan.length)toast('✔ '+plan.length+' कॉलम अपने आप भर गए',2200);
+}
+// Dropdown se ID चुनते ही (input -> cell-editor बदलता है) पूरी पंक्ति भरो
+const mo=new MutationObserver(recs=>{
+  if(!on())return;
+  for(const r of recs){
+    if(![...r.removedNodes].some(n=>n.nodeType===1&&n.matches&&n.matches('input.real-dropdown-input')))continue;
+    r.addedNodes.forEach(n=>{if(n.nodeType===1&&n.classList.contains('cell-editor'))fillRow(n);});
+  }
+});
+for(let k=1;k<=10;k++){const b=$(k===1?'tableBody':'tableBody'+k);if(b)mo.observe(b,{childList:true,subtree:true});}
+try{const v=localStorage.getItem('pref_masterfill');if(v==='0'&&$('masterAutoFillToggle'))$('masterAutoFillToggle').checked=false;}catch(e){}
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='masterAutoFillToggle'){try{localStorage.setItem('pref_masterfill',e.target.checked?'1':'0');}catch(x){}}});
+})();
+</script>
+
+<style id="dupRedStyle">
+td.dup-red,td.dup-red .cell-editor,td.dup-red input{background:#ff1a1a!important;color:#fff!important;font-weight:bold!important}
+#dupStatus{font-size:12px;font-weight:bold;text-transform:none;padding:4px 6px}
+</style>
+<script id="dupRed">
+(function(){
+const $=id=>document.getElementById(id);
+// Sirf aise columns jahan duplicate galat hota hai (gender/class/school jaise columns me repeat normal hai)
+const RULES=[/teacher\s*id|shikshakosh/i,/name\s*of\s*teacher/i,/aadh?a?r|adhar|आधार/i,/\bpan\b/i,/\buan\b|gpf|pran/i,/account|a\/c/i,/mobile|phone/i];
+const SKIP=new Set(['NA','N/A','NIL','NONE','-','--','0','NO']);
+const isKey=h=>{h=String(h||'').replace(/\([^)]*\)/g,' ');return RULES.some(r=>r.test(h));};
+function val(td){const e=td.querySelector('.cell-editor');if(e)return e.textContent;const i=td.querySelector('input');if(i)return i.value||'';return td.textContent;}
+function run(){
+  const on=!$('dupToggle')||$('dupToggle').checked;let total=0;
+  document.querySelectorAll('.sheet table').forEach(t=>{
+    t.querySelectorAll('td.dup-red').forEach(td=>{td.classList.remove('dup-red');td.removeAttribute('title');});
+    if(!on)return;
+    const ths=[...t.querySelectorAll('thead tr.labels th')],rows=[...t.querySelectorAll('tbody tr')];
+    ths.forEach((th,i)=>{
+      if(i===0||!isKey(th.textContent))return;
+      const map=new Map();
+      rows.forEach(r=>{const td=r.cells[i];if(!td)return;const raw=val(td).trim(),k=raw.toUpperCase().replace(/\s+/g,'');
+        if(k.length<2||SKIP.has(k))return;(map.get(k)||map.set(k,[]).get(k)).push([td,raw]);});
+      map.forEach(list=>{if(list.length>1){list.forEach(p=>{p[0].classList.add('dup-red');p[0].title='डुप्लीकेट डेटा: '+p[1];});total+=list.length;}});
+    });
+  });
+  const s=$('dupStatus');if(s){s.textContent=!on?'':(total?'🔴 '+total+' डुप्लीकेट बॉक्स':'✔ कोई डुप्लीकेट नहीं');s.style.color=total?'#c00':'#256029';}
+}
+let tm;const later=()=>{clearTimeout(tm);tm=setTimeout(run,250);};
+['input','change','focusout'].forEach(n=>document.addEventListener(n,later,true));
+const mo=new MutationObserver(later);
+for(let k=1;k<=10;k++){const b=$(k===1?'tableBody':'tableBody'+k);if(b)mo.observe(b,{childList:true,subtree:true,characterData:true});}
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='dupToggle'){try{localStorage.setItem('pref_dup',e.target.checked?'1':'0');}catch(x){}run();}});
+addEventListener('load',()=>setTimeout(()=>{try{if(localStorage.getItem('pref_dup')==='0'&&$('dupToggle'))$('dupToggle').checked=false;}catch(e){}run();},400));
+})();
+</script>
 
 </body>
 </html>
